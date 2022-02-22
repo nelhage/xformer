@@ -1,5 +1,6 @@
 import xformer
 import xformer.data
+import xformer.loss
 
 import os
 import torch
@@ -45,15 +46,15 @@ def main():
   files = sorted(glob.glob(args.data))
   ds = xformer.data.PTDataset(files)
   loader = torch.utils.data.DataLoader(ds, batch_size=args.minibatch, pin_memory=True, num_workers=1)
+
   model = xformer.Transformer(cfg, dtype=torch.float32, device=args.device)
 
-  xent = torch.nn.CrossEntropyLoss(reduction='mean')
   opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
   assert args.batch % args.minibatch == 0, "minibatch must divide batch"
   steps_per_batch = args.batch // args.minibatch
 
-  data = iter(loader)
+  data = iter(xformer.data.ARProcessor(loader, device='cuda'))
 
   if args.wandb:
     run = wandb.init()
@@ -93,6 +94,8 @@ def main():
                      with_stack=True,
                      on_trace_ready=save_profile)
 
+  loss_fn = xformer.loss.ARLoss()
+
   with profiler:
     for step_i in steps:
       step_start = time.time()
@@ -101,10 +104,11 @@ def main():
       opt.zero_grad(set_to_none=True)
       for _ in range(steps_per_batch):
         record = next(data)
-        batch = record['text'].to(device=args.device)
-        logits = model(batch[:, :-1])
-        targets = batch[:, 1:]
-        loss = xent(logits.permute(0, 2, 1), targets)
+        batch = record['input']
+
+        logits = model(batch)
+
+        loss = loss_fn(logits, record)
         avg_loss += loss
         tokens += batch.numel()
         (loss / steps_per_batch).backward()
