@@ -1,7 +1,2 @@
---index-url https://pypi.python.org/simple/
--f https://download.pytorch.org/whl/torch_stable.html
-torch==1.9.1+cu111
-zstandard
-numpy
-pytest
-py-spy
+-r requirements.base.txt
+torch>=1.11.0
